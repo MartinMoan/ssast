@@ -143,24 +143,23 @@ class ASTModel(nn.Module):
             sd = torch.load(load_pretrained_mdl_path, map_location=device)
             # get the fshape and tshape, input_fdim and input_tdim in the pretraining stage
             try:
-                p_fshape, p_tshape = sd['module.v.patch_embed.proj.weight'].shape[2], sd['module.v.patch_embed.proj.weight'].shape[3]
-                p_input_fdim, p_input_tdim = sd['module.p_input_fdim'].item(), sd['module.p_input_tdim'].item()
+                p_fshape, p_tshape = sd['v.patch_embed.proj.weight'].shape[2], sd['v.patch_embed.proj.weight'].shape[3]
+                p_input_fdim, p_input_tdim = sd['p_input_fdim'].item(), sd['p_input_tdim'].item()
             except:
-                raise  ValueError('The model loaded is not from a torch.nn.Dataparallel object. Wrap it with torch.nn.Dataparallel and try again.')
+                raise  ValueError(f'The model loaded is not from a {ASTModel.__name__} object.')
 
-            print('now load a SSL pretrained models from ' + load_pretrained_mdl_path)
+            print(f'now load a SSL pretrained models from {load_pretrained_mdl_path}')
             # during pretraining, fstride=fshape and tstride=tshape because no patch overlapping is used
             # here, input_fdim and input_tdim should be that used in pretraining, not that in the fine-tuning.
             # we need to know input_fdim and input_tdim to do positional embedding cut/interpolation.
             # generally it should be better to use same input_fdim during pretraining and finetuning, but input_tdim can be safely different
             audio_model = ASTModel(fstride=p_fshape, tstride=p_tshape, fshape=p_fshape, tshape=p_tshape,
                                    input_fdim=p_input_fdim, input_tdim=p_input_tdim, pretrain_stage=True, model_size=model_size)
-            audio_model = torch.nn.DataParallel(audio_model)
             audio_model.load_state_dict(sd, strict=False)
 
-            self.v = audio_model.module.v
+            self.v = audio_model.v
             self.original_embedding_dim = self.v.pos_embed.shape[2]
-            self.cls_token_num = audio_model.module.cls_token_num
+            self.cls_token_num = audio_model.cls_token_num
 
             # mlp head for fine-tuning
             self.mlp_head = nn.Sequential(nn.LayerNorm(self.original_embedding_dim),
@@ -168,7 +167,7 @@ class ASTModel(nn.Module):
 
             f_dim, t_dim = self.get_shape(fstride, tstride, input_fdim, input_tdim, fshape, tshape)
             # patch array dimension during pretraining
-            p_f_dim, p_t_dim = audio_model.module.p_f_dim, audio_model.module.p_t_dim
+            p_f_dim, p_t_dim = audio_model.p_f_dim, audio_model.p_t_dim
             num_patches = f_dim * t_dim
             p_num_patches = p_f_dim * p_t_dim
             self.v.patch_embed.num_patches = num_patches
@@ -482,8 +481,6 @@ if __name__ == '__main__':
     # do back propagate and update the model, etc
 
     # after pretraining, save the pretrained model.
-    # the code is designed for Dataparallel model
-    ast_mdl = torch.nn.DataParallel(ast_mdl)
     torch.save(ast_mdl.state_dict(), './test_mdl.pth')
 
     # fine-tuning stage
